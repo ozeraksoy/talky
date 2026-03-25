@@ -1,0 +1,17 @@
+# macOS
+.DS_Store
+**/.DS_Store
+
+# Claude Code sistem dosyaları
+.claude/
+CLAUDE.md
+.babelrc
+
+# CEP lib klasörü (kurulumda oluşturuluyor)
+lib/
+
+# Node
+node_modules/
+
+# CSInterface.js dahil et (plugin için gerekli)
+!client/CSInterface.js
