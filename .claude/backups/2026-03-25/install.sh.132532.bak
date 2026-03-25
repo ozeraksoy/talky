@@ -1,0 +1,115 @@
+#!/bin/bash
+# ─────────────────────────────────────────────────────────────────────────────
+# Talky - Premiere Pro Altyazı Oluşturucu
+# macOS Kurulum Scripti
+# ─────────────────────────────────────────────────────────────────────────────
+
+set -e
+
+EXTENSION_ID="com.talky.captioner"
+CEP_DIR="$HOME/Library/Application Support/Adobe/CEP/extensions"
+INSTALL_DIR="$CEP_DIR/$EXTENSION_ID"
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+SOURCE_DIR="$( cd "$SCRIPT_DIR/.." && pwd )"
+
+echo ""
+echo "╔══════════════════════════════════════════╗"
+echo "║   Talky - Altyazı Oluşturucu Kurulum     ║"
+echo "╚══════════════════════════════════════════╝"
+echo ""
+
+# ── 1. CEP klasörünü oluştur ───────────────────────────────────────────────────
+echo "→ CEP extensions klasörü hazırlanıyor..."
+mkdir -p "$CEP_DIR"
+
+# ── 2. Eski kurulumu temizle ──────────────────────────────────────────────────
+if [ -d "$INSTALL_DIR" ]; then
+    echo "→ Eski kurulum kaldırılıyor..."
+    rm -rf "$INSTALL_DIR"
+fi
+
+# ── 3. Plugin dosyalarını kopyala ─────────────────────────────────────────────
+echo "→ Plugin dosyaları kopyalanıyor: $INSTALL_DIR"
+mkdir -p "$INSTALL_DIR"
+mkdir -p "$INSTALL_DIR/lib"
+
+cp -r "$SOURCE_DIR/CSXS"   "$INSTALL_DIR/"
+cp -r "$SOURCE_DIR/client" "$INSTALL_DIR/"
+cp -r "$SOURCE_DIR/host"   "$INSTALL_DIR/"
+
+if [ -f "$SOURCE_DIR/.debug" ]; then
+    cp "$SOURCE_DIR/.debug" "$INSTALL_DIR/"
+fi
+
+# ── 4. CSInterface.js indir ───────────────────────────────────────────────────
+echo "→ CSInterface.js indiriliyor..."
+CSINTERFACE_URL="https://raw.githubusercontent.com/Adobe-CEP/CEP-Resources/master/CEP_11.x/CEP_11.0/CSInterface.js"
+CSINTERFACE_PATH="$INSTALL_DIR/lib/CSInterface.js"
+
+if command -v curl &>/dev/null; then
+    curl -s -L "$CSINTERFACE_URL" -o "$CSINTERFACE_PATH"
+    echo "  ✓ CSInterface.js indirildi."
+elif command -v wget &>/dev/null; then
+    wget -q "$CSINTERFACE_URL" -O "$CSINTERFACE_PATH"
+    echo "  ✓ CSInterface.js indirildi."
+else
+    echo "  ⚠ curl/wget bulunamadı. CSInterface.js manuel indirilmeli."
+    echo "  URL: $CSINTERFACE_URL"
+    echo "  Hedef: $CSINTERFACE_PATH"
+fi
+
+# ── 5. CEP Debug Modu (imzasız extension için zorunlu) ────────────────────────
+echo "→ CEP debug modu etkinleştiriliyor (imzasız extension için gerekli)..."
+
+for ver in 9 10 11 12; do
+    KEY="com.adobe.CSXS.$ver"
+    CURRENT=$(defaults read "$KEY" PlayerDebugMode 2>/dev/null || echo "")
+    if [ "$CURRENT" != "1" ]; then
+        defaults write "$KEY" PlayerDebugMode 1
+        echo "  ✓ $KEY PlayerDebugMode = 1"
+    else
+        echo "  ✓ $KEY zaten etkin"
+    fi
+done
+
+# ── 6. ffmpeg Kontrolü ────────────────────────────────────────────────────────
+echo ""
+echo "→ ffmpeg kontrol ediliyor..."
+if command -v ffmpeg &>/dev/null; then
+    FFMPEG_VER=$(ffmpeg -version 2>&1 | head -1)
+    echo "  ✓ ffmpeg mevcut: $FFMPEG_VER"
+elif [ -f "/opt/homebrew/bin/ffmpeg" ]; then
+    echo "  ✓ ffmpeg mevcut: /opt/homebrew/bin/ffmpeg"
+elif [ -f "/usr/local/bin/ffmpeg" ]; then
+    echo "  ✓ ffmpeg mevcut: /usr/local/bin/ffmpeg"
+else
+    echo ""
+    echo "  ⚠ ffmpeg BULUNAMADI!"
+    echo ""
+    echo "  ffmpeg kurmak için:"
+    echo "  1. Homebrew ile (önerilen):"
+    echo "     brew install ffmpeg"
+    echo ""
+    echo "  2. Manuel indirme:"
+    echo "     https://ffmpeg.org/download.html"
+    echo ""
+fi
+
+# ── 7. Kurulum Özeti ──────────────────────────────────────────────────────────
+echo ""
+echo "╔══════════════════════════════════════════╗"
+echo "║           KURULUM TAMAMLANDI!            ║"
+echo "╚══════════════════════════════════════════╝"
+echo ""
+echo "Kurulum konumu:"
+echo "  $INSTALL_DIR"
+echo ""
+echo "Sonraki adımlar:"
+echo "  1. Premiere Pro'yu yeniden başlatın"
+echo "  2. Menü: Window → Extensions → Talky - Altyazı Oluşturucu"
+echo "  3. API anahtarınızı girin (platform.openai.com/api-keys)"
+echo ""
+echo "Sorun çıkarsa:"
+echo "  - Hata ayıklama: Chrome'da http://localhost:7777 adresini açın"
+echo "  - README.md dosyasını okuyun"
+echo ""

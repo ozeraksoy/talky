@@ -1,0 +1,1 @@
+- `2026-03-25 12:57:38` | GUARD | MEDIUM | SOFT BLOCKED: recursive/force rm → rm -rf ~/Library/Application\ Support/Adobe/CEP/extensions/talky && ls ~/Library/Application\ Support/Adobe/CEP/extensions/

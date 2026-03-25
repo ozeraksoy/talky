@@ -1,0 +1,30 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install:*)",
+      "Bash(/usr/local/bin/npm install:*)",
+      "Read(//opt/homebrew/bin/**)",
+      "Read(//Users/ozeraksoy/.nvm/versions/**)",
+      "Bash(curl -s \"https://raw.githubusercontent.com/Adobe-CEP/CEP-Resources/master/CEP_11.x/CSInterface.js\" -o /Users/ozeraksoy/Desktop/talky/lib/CSInterface.js)",
+      "Bash(rm:*)",
+      "Bash(rm \"/Users/ozeraksoy/Library/Application Support/Adobe/CEP/extensions/talky\")",
+      "Bash(rsync -a --exclude=node_modules --exclude=.git /Users/ozeraksoy/Desktop/talky/ \"/Users/ozeraksoy/Library/Application Support/Adobe/CEP/extensions/talky/\")",
+      "Bash(npm run:*)",
+      "Bash(rsync -a --exclude=node_modules --exclude=.git --exclude=src --exclude=dist --exclude=webpack.config.js --exclude=.babelrc --exclude=package.json /Users/ozeraksoy/Desktop/talky/ \"/Users/ozeraksoy/Library/Application Support/Adobe/CEP/extensions/talky/\")",
+      "WebSearch",
+      "WebFetch(domain:brevidy.pro)",
+      "WebFetch(domain:aescripts.com)",
+      "WebFetch(domain:www.brevidy.pro)",
+      "WebFetch(domain:www.oreateai.com)",
+      "WebFetch(domain:www.david-lindgren.com)",
+      "WebFetch(domain:cutback.video)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:ppro-scripting.docsforadobe.dev)",
+      "Bash(/Users/ozeraksoy/Desktop/talky/.debug:*)",
+      "Bash(chmod:*)",
+      "Bash(defaults read:*)",
+      "Bash(brew --version)",
+      "Bash(/opt/homebrew/bin/ffmpeg -version)"
+    ]
+  }
+}
