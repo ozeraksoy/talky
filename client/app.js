@@ -25,7 +25,9 @@ const state = {
   ffmpegPath:   'ffmpeg',
   ffmpegOK:     false,
   isProcessing: false,
-  showTranslation: false
+  showTranslation: false,
+  batchMode:    false,
+  batchClips:   []
 };
 
 // ── Başlatma ──────────────────────────────────────────────────────────────────
@@ -46,7 +48,7 @@ function init() {
   document.getElementById('btnSettings').addEventListener('click', toggleSettings);
   document.getElementById('btnToggleKey').addEventListener('click', toggleApiKeyVisibility);
   document.getElementById('apiKey').addEventListener('input', onApiKeyChange);
-  document.getElementById('btnGetClipAtPlayhead').addEventListener('click', getClipAtPlayhead);
+  document.getElementById('btnGetAllClips').addEventListener('click', getAllSequenceClips);
   document.getElementById('btnGetSelectedClip').addEventListener('click', getSelectedClip);
   document.getElementById('translateEnabled').addEventListener('change', onTranslateToggle);
   document.getElementById('btnTranscribe').addEventListener('click', startTranscription);
@@ -142,15 +144,37 @@ function setFFmpegStatus(ok, msg) {
 }
 
 // ── Klip Bilgisi ───────────────────────────────────────────────────────────────
-function getClipAtPlayhead() {
+function getAllSequenceClips() {
   if (!csInterface) { showError('Premiere Pro bağlantısı kurulamadı.'); return; }
+  csInterface.evalScript('getAllClipsInSequence()', handleAllClipsResult);
+}
 
-  csInterface.evalScript('getActiveClipInfo()', handleClipResult);
+function handleAllClipsResult(result) {
+  if (!result || result === 'EvalScript error.') {
+    showError('Premiere Pro ile iletişim kurulamadı.\nLütfen bir sekansın açık olduğundan emin olun.');
+    return;
+  }
+
+  let data;
+  try { data = JSON.parse(result); } catch (e) {
+    showError('Geçersiz yanıt: ' + result); return;
+  }
+
+  if (data.error) { showError(data.error); return; }
+
+  state.batchMode = true;
+  state.batchClips = data.clips;
+  state.clipInfo = data.clips[0];
+
+  setActiveSourceButton('btnGetAllClips');
+  renderBatchClipInfo(data.clips);
+  updateTranscribeButton();
 }
 
 function getSelectedClip() {
   if (!csInterface) { showError('Premiere Pro bağlantısı kurulamadı.'); return; }
-
+  state.batchMode = false;
+  state.batchClips = [];
   csInterface.evalScript('getSelectedClipInfo()', handleClipResult);
 }
 
@@ -170,8 +194,38 @@ function handleClipResult(result) {
   }
 
   state.clipInfo = data;
+  setActiveSourceButton('btnGetSelectedClip');
   renderClipInfo(data);
   updateTranscribeButton();
+}
+
+function setActiveSourceButton(activeId) {
+  ['btnGetAllClips', 'btnGetSelectedClip'].forEach(id => {
+    document.getElementById(id).classList.toggle('active', id === activeId);
+  });
+}
+
+function renderBatchClipInfo(clips) {
+  const box = document.getElementById('clipInfoBox');
+  const totalDuration = clips.reduce((sum, c) => sum + c.duration, 0);
+  const names = clips.map(c => c.mediaPath ? c.mediaPath.split('/').pop().split('\\').pop() : c.name);
+
+  box.innerHTML = `
+    <div class="clip-data">
+      <div class="clip-name" title="Tüm Sekans">⏏ Tüm Sekans — ${clips.length} klip</div>
+      <div class="clip-meta">
+        <div class="clip-meta-item">
+          <span class="clip-meta-label">Klip Sayısı</span>
+          <span class="clip-meta-value">${clips.length} klip</span>
+        </div>
+        <div class="clip-meta-item">
+          <span class="clip-meta-label">Toplam Süre</span>
+          <span class="clip-meta-value">${secondsToHMS(totalDuration)}</span>
+        </div>
+      </div>
+      <div class="clip-path" title="${names.join(', ')}">${names.join(' · ')}</div>
+    </div>
+  `;
 }
 
 function renderClipInfo(info) {
@@ -214,66 +268,57 @@ async function startTranscription() {
   if (!state.clipInfo) { showError('Önce klip bilgisini alın.'); return; }
   if (!state.apiKey)   { showError('OpenAI API anahtarı girilmedi.\nAyarlar simgesine tıklayın.'); return; }
 
+  if (!state.ffmpegOK) {
+    showError(
+      'ffmpeg bulunamadı. Ses çıkarma için ffmpeg gereklidir.\n\n' +
+      'Kurulum:\n' +
+      '  1. brew install ffmpeg\n\n' +
+      'Homebrew yoksa önce:\n' +
+      '  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"\n\n' +
+      'Kurduktan sonra Premiere Pro\'yu yeniden başlatın.'
+    );
+    return;
+  }
+
   hideError();
   state.isProcessing = true;
   updateTranscribeButton();
 
   const translateEnabled = document.getElementById('translateEnabled').checked;
-  const sourceLang       = document.getElementById('sourceLanguage').value;
   const targetLang       = document.getElementById('targetLanguage').value;
 
-  let audioPath = null;
-  let tempCreated = false;
-
   try {
-    // Adım 1: ffmpeg ile ses çıkar
-    if (!state.ffmpegOK) {
-      throw new Error(
-        'ffmpeg bulunamadı. Ses çıkarma için ffmpeg gereklidir.\n\n' +
-        'Kurulum:\n' +
-        '  1. brew install ffmpeg\n\n' +
-        'Homebrew yoksa önce:\n' +
-        '  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"\n\n' +
-        'Kurduktan sonra Premiere Pro\'yu yeniden başlatın.'
-      );
+    let allSegments;
+
+    if (state.batchMode && state.batchClips.length > 1) {
+      allSegments = await transcribeBatch(state.batchClips);
+    } else {
+      allSegments = await transcribeClip(state.clipInfo, 10, 90);
     }
 
-    setProgress(10, 'Ses çıkarılıyor...');
-    audioPath = await extractAudio(
-      state.clipInfo.mediaPath,
-      state.clipInfo.inPoint,
-      state.clipInfo.outPoint - state.clipInfo.inPoint
-    );
-    tempCreated = true;
-
-    // Adım 2: Whisper ile transkripsiyon
-    setProgress(35, 'Transkripsiyon yapılıyor... (Whisper API)');
-    const whisperResult = await whisperTranscribe(audioPath, state.apiKey, sourceLang);
-
-    if (!whisperResult.segments || whisperResult.segments.length === 0) {
-      throw new Error('Transkripsiyon boş döndü. Klipte ses olduğundan emin olun.');
+    // Karakter sınırı uygula
+    const maxChars = parseInt(document.getElementById('maxCharsPerLine').value, 10) || 0;
+    if (maxChars > 0) {
+      allSegments = splitSegmentsByCharLimit(allSegments, maxChars);
     }
 
-    state.segments = whisperResult.segments.map(seg => ({
-      start: seg.start,
-      end:   seg.end,
-      text:  seg.text.trim()
-    }));
+    // Üst üste binen timestamp'ları düzelt
+    allSegments = fixSegmentOverlaps(allSegments);
 
-    // Adım 3: Çeviri (isteğe bağlı)
+    state.segments = allSegments;
+
+    // Çeviri (isteğe bağlı)
     if (translateEnabled) {
-      setProgress(70, `Çeviri yapılıyor... (${targetLang.toUpperCase()})`);
+      setProgress(92, `Çeviri yapılıyor... (${targetLang.toUpperCase()})`);
       const translated = await translateSegments(state.segments, targetLang, state.apiKey);
       state.segments.forEach((seg, i) => { seg.translated = translated[i] || seg.text; });
     }
 
     setProgress(100, 'Tamamlandı!');
 
-    // Sonuçları göster
     state.showTranslation = false;
     renderResults(translateEnabled);
 
-    // Sonuç alanlarını göster
     document.getElementById('resultsSection').classList.remove('hidden');
     document.getElementById('exportSection').classList.remove('hidden');
 
@@ -288,13 +333,129 @@ async function startTranscription() {
     hideProgress();
     showError(err.message || String(err));
   } finally {
-    // Geçici ses dosyasını temizle (sadece ffmpeg ile oluşturulduysa)
-    if (tempCreated && audioPath && fs) {
-      try { fs.unlinkSync(audioPath); } catch (e) {}
-    }
     state.isProcessing = false;
     updateTranscribeButton();
   }
+}
+
+// Tek bir klip transkribe et — normalize edilmiş segment dizisi döndürür (timeline offset yok)
+async function transcribeClip(clip, progressStart, progressEnd) {
+  const sourceLang = document.getElementById('sourceLanguage').value;
+
+  const midPoint = progressStart + Math.round((progressEnd - progressStart) * 0.3);
+
+  setProgress(progressStart, `Ses çıkarılıyor... (${clip.name ? clip.name.substring(0, 20) : ''})`);
+  const audioPath = await extractAudio(clip.mediaPath, clip.inPoint, clip.outPoint - clip.inPoint);
+
+  try {
+    setProgress(midPoint, 'Transkripsiyon yapılıyor... (Whisper API)');
+    const whisperResult = await whisperTranscribe(audioPath, state.apiKey, sourceLang);
+
+    if (!whisperResult.segments || whisperResult.segments.length === 0) {
+      throw new Error('Transkripsiyon boş döndü. Klipte ses olduğundan emin olun.');
+    }
+
+    return whisperResult.segments.map(seg => ({
+      start: seg.start,
+      end:   seg.end,
+      text:  seg.text.trim()
+    }));
+  } finally {
+    if (fs) { try { fs.unlinkSync(audioPath); } catch (e) {} }
+  }
+}
+
+// Tüm klipleri sırayla transkribe et, timestamp'ları kümülatif süreye göre offset'le
+async function transcribeBatch(clips) {
+  const allSegments = [];
+  let cumulativeOffset = 0;
+
+  for (let i = 0; i < clips.length; i++) {
+    const clip = clips[i];
+    const pStart = Math.round((i / clips.length) * 85);
+    const pEnd   = Math.round(((i + 1) / clips.length) * 85);
+
+    setProgress(pStart, `Klip ${i + 1}/${clips.length}: ${clip.name ? clip.name.substring(0, 25) : ''}`);
+
+    try {
+      const segments = await transcribeClip(clip, pStart, pEnd);
+      segments.forEach(seg => {
+        allSegments.push({
+          start: seg.start + cumulativeOffset,
+          end:   seg.end   + cumulativeOffset,
+          text:  seg.text
+        });
+      });
+      cumulativeOffset += clip.duration;
+    } catch (err) {
+      // Hatalı klibi atla, devam et — süreyi yine de say
+      console.warn('Klip transkripsiyon hatası (' + clip.name + '):', err.message);
+      cumulativeOffset += clip.duration;
+    }
+  }
+
+  if (allSegments.length === 0) {
+    throw new Error('Hiçbir klipten transkripsiyon alınamadı.');
+  }
+
+  return allSegments;
+}
+
+// Segment bitiş zamanlarını bir sonraki segment'in başlangıcıyla kırp — üst üste binmeyi engelle
+function fixSegmentOverlaps(segments) {
+  if (segments.length <= 1) return segments;
+  return segments.map((seg, i) => {
+    if (i < segments.length - 1 && seg.end > segments[i + 1].start) {
+      return Object.assign({}, seg, { end: segments[i + 1].start });
+    }
+    return seg;
+  }).filter(seg => seg.end > seg.start); // sıfır veya negatif süreli segmentleri at
+}
+
+// Segmentleri karakter sınırına göre böl (kelime sınırlarında, timestamp orantılı dağıtılır)
+function splitSegmentsByCharLimit(segments, maxChars) {
+  const result = [];
+
+  for (const seg of segments) {
+    if (seg.text.length <= maxChars) {
+      result.push(seg);
+      continue;
+    }
+
+    const words = seg.text.split(' ');
+    const lines = [];
+    let current = '';
+
+    for (const word of words) {
+      const candidate = current ? current + ' ' + word : word;
+      if (candidate.length <= maxChars) {
+        current = candidate;
+      } else {
+        if (current) lines.push(current);
+        // Kelime tek başına sınırı aşıyorsa olduğu gibi ekle
+        current = word;
+      }
+    }
+    if (current) lines.push(current);
+
+    if (lines.length === 1) {
+      result.push(seg);
+      continue;
+    }
+
+    // Zaman damgalarını satır başına orantılı dağıt
+    const segDur = seg.end - seg.start;
+    const perLine = segDur / lines.length;
+    lines.forEach((line, i) => {
+      result.push({
+        start: seg.start + i * perLine,
+        end:   seg.start + (i + 1) * perLine,
+        text:  line
+      });
+    });
+  }
+
+  return result;
 }
 
 // ── Ses Çıkarma (ffmpeg) ──────────────────────────────────────────────────────
@@ -550,10 +711,13 @@ function saveSRT() {
   const useTranslation = document.querySelector('input[name="exportContent"]:checked').value === 'translated';
   const srtContent = generateSRT(useTranslation);
 
-  // Çıktı yolu: kaynak video ile aynı klasör
-  const videoPath = state.clipInfo.mediaPath;
+  // Çıktı yolu: kaynak video ile aynı klasör (batch'de ilk klibin klasörü)
+  const refClip = state.batchMode && state.batchClips.length > 0 ? state.batchClips[0] : state.clipInfo;
+  const videoPath = refClip.mediaPath;
   const videoDir  = path.dirname(videoPath);
-  const baseName  = path.basename(videoPath, path.extname(videoPath));
+  const baseName  = state.batchMode
+    ? (refClip.sequenceName || 'sekans')
+    : path.basename(videoPath, path.extname(videoPath));
   const langSuffix = useTranslation
     ? '_' + document.getElementById('targetLanguage').value
     : '_' + (document.getElementById('sourceLanguage').value || 'tr');

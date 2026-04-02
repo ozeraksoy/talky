@@ -402,9 +402,16 @@ select {
 }
 
 .btn-sm.active {
-  background: var(--accent-dim);
+  background: var(--accent);
   border-color: var(--accent);
-  color: var(--accent);
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.btn-sm.active:hover {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+  color: #ffffff;
 }
 
 .btn-export {

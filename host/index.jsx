@@ -122,6 +122,72 @@ function getSelectedClipInfo() {
 }
 
 /**
+ * Aktif sekandaki tüm video kliplerini döndürür (timeline sırasıyla).
+ */
+function getAllClipsInSequence() {
+  try {
+    var sequence = app.project.activeSequence;
+    if (!sequence) {
+      return JSON.stringify({ error: 'Aktif sekans bulunamadı. Lütfen bir sekans açın.' });
+    }
+
+    var clips = [];
+    var videoTracks = sequence.videoTracks;
+
+    // Sadece en alt dolu track'i işle (V1 = ana konuşma içeriği).
+    // B-roll, title ve overlay'ler üst track'lerde olduğundan onları atla.
+    var primaryTrack = null;
+    for (var i = 0; i < videoTracks.numTracks; i++) {
+      var t = videoTracks[i];
+      for (var k = 0; k < t.clips.numItems; k++) {
+        var mp = '';
+        try { mp = t.clips[k].projectItem.getMediaPath(); } catch (e) {}
+        if (mp) { primaryTrack = t; break; }
+      }
+      if (primaryTrack) break;
+    }
+
+    if (!primaryTrack) {
+      return JSON.stringify({ error: 'Sekansda video klip bulunamadı.' });
+    }
+
+    for (var j = 0; j < primaryTrack.clips.numItems; j++) {
+      var clip = primaryTrack.clips[j];
+      var mediaPath = '';
+      try { mediaPath = clip.projectItem.getMediaPath(); } catch (e) {}
+      if (!mediaPath) continue;
+
+      clips.push({
+        name: clip.name,
+        mediaPath: mediaPath,
+        inPoint: clip.inPoint.seconds,
+        outPoint: clip.outPoint.seconds,
+        startOnTimeline: clip.start.seconds,
+        endOnTimeline: clip.end.seconds,
+        duration: clip.duration.seconds,
+        sequenceName: sequence.name,
+        projectPath: app.project.path
+      });
+    }
+
+    if (clips.length === 0) {
+      return JSON.stringify({ error: 'Sekansda video klip bulunamadı.' });
+    }
+
+    // Timeline pozisyonuna göre sırala
+    clips.sort(function (a, b) { return a.startOnTimeline - b.startOnTimeline; });
+
+    return JSON.stringify({
+      clips: clips,
+      sequenceName: sequence.name
+    });
+
+  } catch (e) {
+    return JSON.stringify({ error: 'Hata: ' + e.toString() });
+  }
+}
+
+/**
  * SRT dosyasını Premiere Pro projesine içe aktarır.
  * @param {string} srtPath - SRT dosyasının tam yolu
  */

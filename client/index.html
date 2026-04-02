@@ -45,7 +45,7 @@
     <div class="section-header">
       <span class="section-title">Aktif Klip</span>
       <div class="btn-group">
-        <button id="btnGetClipAtPlayhead" class="btn-sm" title="Oynatma kafasındaki klibi al">⏺ Kafadaki</button>
+        <button id="btnGetAllClips" class="btn-sm" title="Aktif sekandaki tüm klipleri al">⏏ Tümü</button>
         <button id="btnGetSelectedClip" class="btn-sm" title="Seçili klibi al">☑ Seçili</button>
       </div>
     </div>
@@ -90,6 +90,11 @@
         <span class="checkmark"></span>
         Çeviri Yap
       </label>
+    </div>
+
+    <div class="form-row">
+      <label>Maks Karakter/Satır</label>
+      <input type="number" id="maxCharsPerLine" placeholder="Sınırsız" min="10" max="300" style="width:90px; flex:none">
     </div>
 
     <div id="targetLangRow" class="form-row hidden">
